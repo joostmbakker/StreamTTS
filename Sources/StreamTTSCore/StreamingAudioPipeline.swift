@@ -1,5 +1,6 @@
 import AVFoundation
 
+/// Configuration for the audio pipeline buffering, backpressure, and engine management.
 public struct AudioPipelineConfiguration: Sendable {
     /// Bytes to accumulate before feeding to AVAudioConverter.
     public var chunkAccumulationSize: Int = 4096
@@ -14,6 +15,12 @@ public struct AudioPipelineConfiguration: Sendable {
     /// Set to false if the host app manages its own audio session.
     public var managesAudioEngine: Bool = true
     
+    /// Creates a new pipeline configuration.
+    /// - Parameters:
+    ///   - chunkAccumulationSize: Bytes to accumulate before feeding to AVAudioConverter.
+    ///   - playbackWatermark: Minimum duration of converted audio required in the player queue before playback starts.
+    ///   - maxBufferedDuration: Maximum duration of audio to buffer ahead of playback. Provides backpressure to the network stream.
+    ///   - managesAudioEngine: Whether to automatically start/stop AVAudioEngine.
     public init(
         chunkAccumulationSize: Int = 4096,
         playbackWatermark: TimeInterval = 0.5,
@@ -27,6 +34,7 @@ public struct AudioPipelineConfiguration: Sendable {
     }
 }
 
+/// A provider-agnostic actor that buffers PCM chunks, converts sample format, and schedules playback on `AVAudioEngine`.
 public actor StreamingAudioPipeline {
     private let configuration: AudioPipelineConfiguration
     private let engine = AVAudioEngine()
@@ -46,6 +54,8 @@ public actor StreamingAudioPipeline {
     private var backpressureContinuation: CheckedContinuation<Void, Never>?
     private var finishedContinuation: CheckedContinuation<Void, Never>?
 
+    /// Creates a new streaming audio pipeline.
+    /// - Parameter configuration: The configuration for the pipeline.
     public init(configuration: AudioPipelineConfiguration = .init()) {
         self.configuration = configuration
         engine.attach(playerNode)

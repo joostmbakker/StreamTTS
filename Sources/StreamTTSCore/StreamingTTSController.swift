@@ -11,6 +11,8 @@ public final class StreamingTTSController: @unchecked Sendable {
     private var isStarted = false
     private var isCancelled = false
     
+    /// Creates a new controller with the specified TTS provider.
+    /// - Parameter provider: The TTS provider to use for synthesis.
     public init(provider: any TTSProvider) {
         self.provider = provider
         self.pipeline = StreamingAudioPipeline()
