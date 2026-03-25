@@ -2,6 +2,53 @@ import StreamTTSCore
 import AVFoundation
 import Foundation
 
+// MARK: - WebSocket connection delegate
+
+/// Bridges `URLSessionWebSocketDelegate` callbacks into Swift Concurrency.
+/// Allows callers to `await` the WebSocket open event before sending.
+private final class WebSocketOpenDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+    private let openLock = NSLock()
+    private var openContinuation: CheckedContinuation<Void, Error>?
+
+    /// Suspends the caller until the WebSocket handshake completes or fails.
+    func waitForOpen() async throws {
+        try await withCheckedThrowingContinuation { cont in
+            openLock.lock()
+            openContinuation = cont
+            openLock.unlock()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        openLock.withLock {
+            openContinuation?.resume()
+            openContinuation = nil
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        openLock.withLock {
+            openContinuation?.resume(
+                throwing: StreamTTSError.providerConnectionFailed(
+                    underlying: URLError(.networkConnectionLost)
+                )
+            )
+            openContinuation = nil
+        }
+    }
+}
+
+// MARK: - Adapter
+
 /// A `TTSProvider` implementation that uses ElevenLabs WebSocket streaming API.
 public struct ElevenLabsTTSAdapter: TTSProvider {
     /// The adapter's configuration.
@@ -45,12 +92,25 @@ public struct ElevenLabsTTSAdapter: TTSProvider {
             
             var request = URLRequest(url: url)
             request.setValue(configuration.apiKey, forHTTPHeaderField: "xi-api-key")
-            
-            let webSocketTask = URLSession.shared.webSocketTask(with: request)
+
+            // Use a delegate-backed session so we can wait for the WebSocket
+            // handshake to complete before sending any messages. Without this,
+            // send() races against the TCP/TLS/WS upgrade and throws POSIX 57
+            // ("Socket is not connected").
+            let delegate = WebSocketOpenDelegate()
+            let session = URLSession(
+                configuration: .default,
+                delegate: delegate,
+                delegateQueue: nil
+            )
+            let webSocketTask = session.webSocketTask(with: request)
             webSocketTask.resume()
             
             let coordinatorTask = Task {
                 do {
+                    // Wait until the WebSocket handshake is done before sending.
+                    try await delegate.waitForOpen()
+
                     try await withThrowingTaskGroup(of: Void.self) { group in
                         
                         group.addTask {
@@ -136,6 +196,7 @@ public struct ElevenLabsTTSAdapter: TTSProvider {
             
             continuation.onTermination = { @Sendable termination in
                 webSocketTask.cancel(with: .normalClosure, reason: nil)
+                session.invalidateAndCancel()
                 coordinatorTask.cancel()
             }
         }
