@@ -2,51 +2,6 @@ import StreamTTSCore
 import AVFoundation
 import Foundation
 
-// MARK: - WebSocket connection delegate
-
-/// Bridges `URLSessionWebSocketDelegate` callbacks into Swift Concurrency.
-/// Allows callers to `await` the WebSocket open event before sending.
-private final class WebSocketOpenDelegate: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
-    private let openLock = NSLock()
-    private var openContinuation: CheckedContinuation<Void, Error>?
-
-    /// Suspends the caller until the WebSocket handshake completes or fails.
-    func waitForOpen() async throws {
-        try await withCheckedThrowingContinuation { cont in
-            openLock.lock()
-            openContinuation = cont
-            openLock.unlock()
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        webSocketTask: URLSessionWebSocketTask,
-        didOpenWithProtocol protocol: String?
-    ) {
-        openLock.withLock {
-            openContinuation?.resume()
-            openContinuation = nil
-        }
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        webSocketTask: URLSessionWebSocketTask,
-        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
-        reason: Data?
-    ) {
-        openLock.withLock {
-            openContinuation?.resume(
-                throwing: StreamTTSError.providerConnectionFailed(
-                    underlying: URLError(.networkConnectionLost)
-                )
-            )
-            openContinuation = nil
-        }
-    }
-}
-
 // MARK: - Adapter
 
 /// A `TTSProvider` implementation that uses ElevenLabs WebSocket streaming API.
@@ -83,9 +38,20 @@ public struct ElevenLabsTTSAdapter: TTSProvider {
     /// - Returns: An async throwing stream of PCM audio data.
     public func stream(text: AsyncStream<String>) -> AsyncThrowingStream<Data, Error> {
         return AsyncThrowingStream { continuation in
-            let urlString = "wss://api.elevenlabs.io/v1/text-to-speech/\(configuration.voiceId)/stream-input?model_id=\(configuration.modelId)&output_format=\(configuration.outputFormat.rawValue)"
+            var components = URLComponents()
+            components.scheme = "wss"
+            components.host = "api.elevenlabs.io"
+            components.path = "/v1/text-to-speech/\(configuration.voiceId)/stream-input"
+            components.queryItems = [
+                URLQueryItem(name: "model_id", value: configuration.modelId),
+                URLQueryItem(name: "output_format", value: configuration.outputFormat.rawValue),
+                // Pass the API key as a query parameter so it survives the
+                // WebSocket upgrade. URLSessionWebSocketTask may strip custom
+                // HTTP headers during the HTTP→WS upgrade handshake.
+                URLQueryItem(name: "xi-api-key", value: configuration.apiKey),
+            ]
             
-            guard let url = URL(string: urlString) else {
+            guard let url = components.url else {
                 continuation.finish(throwing: StreamTTSError.providerConnectionFailed(underlying: URLError(.badURL)))
                 return
             }
@@ -97,10 +63,10 @@ public struct ElevenLabsTTSAdapter: TTSProvider {
             // handshake to complete before sending any messages. Without this,
             // send() races against the TCP/TLS/WS upgrade and throws POSIX 57
             // ("Socket is not connected").
-            let delegate = WebSocketOpenDelegate()
+            let connectionDelegate = WebSocketConnectionDelegate()
             let session = URLSession(
                 configuration: .default,
-                delegate: delegate,
+                delegate: connectionDelegate,
                 delegateQueue: nil
             )
             let webSocketTask = session.webSocketTask(with: request)
@@ -108,15 +74,19 @@ public struct ElevenLabsTTSAdapter: TTSProvider {
             
             let coordinatorTask = Task {
                 do {
-                    // Wait until the WebSocket handshake is done before sending.
-                    try await delegate.waitForOpen()
-
+                    // Wait for WebSocket handshake to complete before sending
+                    try await connectionDelegate.waitUntilConnected()
+                    
                     try await withThrowingTaskGroup(of: Void.self) { group in
                         
-                        group.addTask {
-                            // Send initial configuration message
+                        group.addTask { [configuration] in
+                            // Send initial BOS (Beginning of Stream) message.
+                            // The API key is included here in addition to the
+                            // HTTP header because URLSessionWebSocketTask may
+                            // strip custom headers during the WS upgrade.
                             let initialMessage: [String: Any] = [
                                 "text": " ",
+                                "xi-api-key": configuration.apiKey,
                                 "voice_settings": [
                                     "stability": 0.5,
                                     "similarity_boost": 0.8
@@ -193,12 +163,70 @@ public struct ElevenLabsTTSAdapter: TTSProvider {
                     }
                 }
             }
-            
             continuation.onTermination = { @Sendable termination in
                 webSocketTask.cancel(with: .normalClosure, reason: nil)
                 session.invalidateAndCancel()
                 coordinatorTask.cancel()
             }
+        }
+    }
+}
+
+// MARK: - WebSocket Connection Delegate
+
+/// A delegate that signals when the WebSocket handshake completes or fails.
+private final class WebSocketConnectionDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
+    private let continuation: AsyncStream<Result<Void, Error>>.Continuation
+    private let stream: AsyncStream<Result<Void, Error>>
+
+    override init() {
+        let (stream, continuation) = AsyncStream.makeStream(of: Result<Void, Error>.self)
+        self.stream = stream
+        self.continuation = continuation
+        super.init()
+    }
+
+    /// Awaits until the WebSocket is open, or throws if it fails.
+    func waitUntilConnected() async throws {
+        for await result in stream {
+            switch result {
+            case .success:
+                return
+            case .failure(let error):
+                throw error
+            }
+        }
+        // Stream finished without a signal — connection was never established
+        throw URLError(.cannotConnectToHost)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        continuation.yield(.success(()))
+        continuation.finish()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        continuation.yield(.failure(URLError(.networkConnectionLost)))
+        continuation.finish()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let error = error {
+            continuation.yield(.failure(error))
+            continuation.finish()
         }
     }
 }
