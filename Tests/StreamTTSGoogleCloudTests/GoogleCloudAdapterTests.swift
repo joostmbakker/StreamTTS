@@ -11,6 +11,7 @@ struct EnvVarAuthProvider: GoogleAuthProvider {
 }
 
 final class GoogleCloudAdapterTests: XCTestCase {
+    @available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, visionOS 2.0, *)
     func testLiveGoogleCloudTTSStreaming() async throws {
         guard let token = ProcessInfo.processInfo.environment["GOOGLE_TTS_ACCESS_TOKEN"] else {
             throw XCTSkip("Skipping live Google Cloud TTS test because GOOGLE_TTS_ACCESS_TOKEN is not set.")
