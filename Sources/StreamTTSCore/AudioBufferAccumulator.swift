@@ -1,11 +1,20 @@
 import Foundation
 import AVFoundation
 
+/// Efficiently accumulates incoming PCM byte chunks into contiguous buffers suitable for AVAudioConverter.
 public struct AudioBufferAccumulator {
     private var buffer = Data()
+    
+    /// The size in bytes at which the accumulator will emit a completed chunk.
     public let threshold: Int
+    
+    /// The number of bytes per audio frame.
     public let bytesPerFrame: Int
 
+    /// Creates a new buffer accumulator.
+    /// - Parameters:
+    ///   - threshold: The size in bytes to accumulate before emitting.
+    ///   - format: The audio format of the incoming PCM data.
     public init(threshold: Int = 4096, format: AVAudioFormat) {
         self.threshold = threshold
         let calculatedBytesPerFrame = Int(format.streamDescription.pointee.mBytesPerFrame)
@@ -13,6 +22,9 @@ public struct AudioBufferAccumulator {
         self.bytesPerFrame = calculatedBytesPerFrame > 0 ? calculatedBytesPerFrame : Int(format.channelCount) * 2 // Assuming 16-bit by default if 0
     }
 
+    /// Appends incoming PCM data and returns any accumulated chunks that have reached the threshold.
+    /// - Parameter data: The new PCM data to append.
+    /// - Returns: An array of completed data chunks.
     public mutating func append(_ data: Data) -> [Data] {
         buffer.append(data)
         var result: [Data] = []
@@ -30,6 +42,8 @@ public struct AudioBufferAccumulator {
         return result
     }
 
+    /// Flushes any remaining accumulated data, dropping partial frames if necessary.
+    /// - Returns: The final chunk of data, if any valid bytes exist.
     public mutating func flush() -> Data? {
         guard !buffer.isEmpty else { return nil }
         

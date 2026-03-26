@@ -2,9 +2,12 @@ import StreamTTSCore
 import AVFoundation
 import Foundation
 
+/// A `TTSProvider` implementation that uses ElevenLabs WebSocket streaming API.
 public struct ElevenLabsTTSAdapter: TTSProvider {
+    /// The adapter's configuration.
     public let configuration: ElevenLabsConfiguration
 
+    /// The output audio format produced by this adapter.
     public var outputFormat: AVAudioFormat {
         let sampleRate: Double
         switch configuration.outputFormat {
@@ -22,10 +25,15 @@ public struct ElevenLabsTTSAdapter: TTSProvider {
         )!
     }
 
+    /// Creates a new ElevenLabs TTS adapter.
+    /// - Parameter configuration: The configuration to use.
     public init(configuration: ElevenLabsConfiguration) {
         self.configuration = configuration
     }
 
+    /// Begins streaming synthesis via WebSocket.
+    /// - Parameter text: An async stream of text chunks to synthesize.
+    /// - Returns: An async throwing stream of PCM audio data.
     public func stream(text: AsyncStream<String>) -> AsyncThrowingStream<Data, Error> {
         return AsyncThrowingStream { continuation in
             let urlString = "wss://api.elevenlabs.io/v1/text-to-speech/\(configuration.voiceId)/stream-input?model_id=\(configuration.modelId)&output_format=\(configuration.outputFormat.rawValue)"
