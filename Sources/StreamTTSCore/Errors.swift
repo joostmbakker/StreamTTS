@@ -19,4 +19,10 @@ public enum StreamTTSError: Error, Sendable {
     
     /// An internal buffer overflow occurred.
     case bufferOverflow(accumulatedBytes: Int)
+    
+    /// `start()` was called after the controller has already been started.
+    case alreadyStarted
+    
+    /// `start()` was called after the controller has been cancelled.
+    case alreadyCancelled
 }

@@ -84,12 +84,15 @@ public struct ElevenLabsTTSAdapter: TTSProvider {
                             // The API key is included here in addition to the
                             // HTTP header because URLSessionWebSocketTask may
                             // strip custom headers during the WS upgrade.
+                            let vs = configuration.voiceSettings
                             let initialMessage: [String: Any] = [
                                 "text": " ",
                                 "xi-api-key": configuration.apiKey,
                                 "voice_settings": [
-                                    "stability": 0.5,
-                                    "similarity_boost": 0.8
+                                    "stability": vs.stability,
+                                    "similarity_boost": vs.similarityBoost,
+                                    "style": vs.style,
+                                    "use_speaker_boost": vs.useSpeakerBoost
                                 ]
                             ]
                             

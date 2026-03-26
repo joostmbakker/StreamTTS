@@ -8,13 +8,23 @@ import GRPCProtobuf
 /// Configuration for the Google Cloud TTS provider.
 public struct GoogleCloudTTSConfiguration: Sendable {
     /// The voice selection parameters.
-    public var voice: Voice = .init(languageCode: "en-US", name: "en-US-Neural2-A")
+    ///
+    /// The default uses a Chirp 3: HD voice, which is required for the
+    /// `StreamingSynthesize` RPC.
+    public var voice: Voice = .init(languageCode: "en-US", name: "en-US-Chirp3-HD-Achernar")
 
     /// The audio encoding format.
     public var audioEncoding: AudioEncoding = .linear16
 
     /// The sample rate in Hertz.
     public var sampleRateHertz: Int = 24000
+
+    /// Optional Google Cloud quota project ID.
+    ///
+    /// Required when authenticating with user credentials (e.g., `gcloud auth
+    /// print-access-token`). Service account credentials typically don't need this.
+    /// Sets the `x-goog-user-project` metadata header on each RPC.
+    public var quotaProjectID: String?
 
     /// Voice selection parameters.
     public struct Voice: Sendable {
@@ -99,6 +109,11 @@ public struct GoogleCloudTTSAdapter: TTSProvider {
                 do {
                     let token = try await auth.accessToken()
 
+                    var metadata: Metadata = ["authorization": "Bearer \(token)"]
+                    if let quotaProject = config.quotaProjectID {
+                        metadata.addString(quotaProject, forKey: "x-goog-user-project")
+                    }
+
                     let transport = try HTTP2ClientTransport.TransportServices(
                         target: .dns(host: "texttospeech.googleapis.com", port: 443),
                         transportSecurity: .tls
@@ -111,7 +126,7 @@ public struct GoogleCloudTTSAdapter: TTSProvider {
 
                         let request = StreamingClientRequest(
                             of: Google_Cloud_Texttospeech_V1_StreamingSynthesizeRequest.self,
-                            metadata: ["authorization": "Bearer \(token)"]
+                            metadata: metadata
                         ) { writer in
                             // First message: streaming config (voice + audio settings).
                             var configMsg = Google_Cloud_Texttospeech_V1_StreamingSynthesizeRequest()
@@ -123,7 +138,8 @@ public struct GoogleCloudTTSAdapter: TTSProvider {
                             streamingConfig.voice = voice
 
                             var audioConfig = Google_Cloud_Texttospeech_V1_StreamingAudioConfig()
-                            audioConfig.audioEncoding = .linear16
+                            // Streaming API requires .pcm (headerless), not .linear16 (WAV-wrapped).
+                            audioConfig.audioEncoding = .pcm
                             audioConfig.sampleRateHertz = Int32(config.sampleRateHertz)
                             streamingConfig.streamingAudioConfig = audioConfig
 

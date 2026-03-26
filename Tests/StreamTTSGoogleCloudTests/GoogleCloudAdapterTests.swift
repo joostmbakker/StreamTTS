@@ -18,7 +18,8 @@ final class GoogleCloudAdapterTests: XCTestCase {
         }
         
         let authProvider = EnvVarAuthProvider(token: token)
-        let config = GoogleCloudTTSConfiguration()
+        var config = GoogleCloudTTSConfiguration()
+        config.quotaProjectID = ProcessInfo.processInfo.environment["GOOGLE_CLOUD_PROJECT"]
         let adapter = GoogleCloudTTSAdapter(configuration: config, authProvider: authProvider)
         
         let textChunks = ["Hello", " world", " from", " Google", " Cloud", " TTS."]
