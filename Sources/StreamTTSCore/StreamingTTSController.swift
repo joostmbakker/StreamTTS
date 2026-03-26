@@ -19,22 +19,25 @@ public final class StreamingTTSController: @unchecked Sendable {
     }
     
     /// Starts streaming synthesis and playback.
+    ///
+    /// - Throws: `StreamTTSError.alreadyStarted` if called more than once,
+    ///           or `StreamTTSError.alreadyCancelled` if the controller was cancelled.
     public func start() async throws {
-        let streamSetup = prepareStart()
-        guard let stream = streamSetup else {
-            return
-        }
+        let stream = try prepareStart()
         
         let audioStream = provider.stream(text: stream)
         try await pipeline.start(stream: audioStream, format: provider.outputFormat)
     }
     
-    private func prepareStart() -> AsyncStream<String>? {
+    private func prepareStart() throws -> AsyncStream<String> {
         lock.lock()
         defer { lock.unlock() }
         
-        if isStarted || isCancelled {
-            return nil
+        if isCancelled {
+            throw StreamTTSError.alreadyCancelled
+        }
+        if isStarted {
+            throw StreamTTSError.alreadyStarted
         }
         isStarted = true
         
