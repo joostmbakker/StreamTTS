@@ -16,6 +16,7 @@ It decouples network-level TTS ingestion from Core Audio hardware rendering. Thi
 
 Add StreamTTS to your Swift project using the Swift Package Manager. In your `Package.swift` file, add:
 
+<!-- TODO: Replace with actual repo URL before publishing -->
 ```swift
 dependencies: [
     .package(url: "https://github.com/your-repo/StreamTTS.git", from: "1.0.0")
@@ -161,4 +162,4 @@ At the heart of the library is `StreamingAudioPipeline`, an isolated actor respo
 4. Enforcing backpressure (pausing network ingestion if the audio queue grows too large).
 5. Waiting for a "playback watermark" to prevent audio stuttering on slow networks.
 
-Read `SPEC.md` for a complete architectural breakdown.
+See the source code in `Sources/StreamTTSCore/` for implementation details.
