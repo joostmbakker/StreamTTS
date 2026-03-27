@@ -84,4 +84,25 @@ public final class StreamingTTSController: @unchecked Sendable {
     public func waitUntilFinished() async {
         await pipeline.waitUntilFinished()
     }
+    
+    /// Synthesizes and plays back a single string of text.
+    ///
+    /// This is a convenience wrapper around the manual `start() → yield(text:) → finish()`
+    /// lifecycle. It starts the pipeline, sends the entire text as a single chunk, signals
+    /// completion, and waits for all audio to finish playing before returning.
+    ///
+    /// Use this when you have the full text available upfront. For incremental streaming
+    /// (e.g., yielding chunks from an LLM response), use `start()`, `yield(text:)`,
+    /// `finish()`, and `waitUntilFinished()` instead.
+    ///
+    /// - Parameter text: The text to synthesize and play.
+    /// - Throws: `StreamTTSError.alreadyStarted` if the controller has already been started,
+    ///           `StreamTTSError.alreadyCancelled` if the controller was cancelled,
+    ///           or any error from the provider or audio pipeline.
+    public func speak(_ text: String) async throws {
+        try await start()
+        yield(text: text)
+        finish()
+        await waitUntilFinished()
+    }
 }

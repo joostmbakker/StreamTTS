@@ -48,7 +48,7 @@ See `Sources/StreamTTSElevenLabs/` for a complete reference implementation using
 1. Fork the repository and create a feature branch.
 2. Make your changes in focused, atomic commits.
 3. Ensure `swift build` and `swift test` pass locally.
-4. Open a PR against `main`. Include a description of what changed and why.
+4. Open a PR against `dev`. Include a description of what changed and why.
 5. All PRs must pass CI checks before merging.
 6. Include tests for new functionality.
 
