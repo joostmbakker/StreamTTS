@@ -70,6 +70,70 @@ final class StreamingTTSControllerTests: XCTestCase {
         await controller.waitUntilFinished()
     }
     
+    // MARK: - speak() convenience method tests
+    
+    func testSpeakSingleString() async throws {
+        let provider = MockTTSProvider(sampleRate: 24000, frequency: 440)
+        let controller = StreamingTTSController(provider: provider)
+        
+        try await controller.speak("Hello, world!")
+        
+        // Verify the provider received exactly one chunk with the full text
+        XCTAssertEqual(provider.receivedChunkCount, 1)
+        XCTAssertEqual(provider.receivedChunks, ["Hello, world!"])
+    }
+    
+    func testSpeakReturnsAfterPlayback() async throws {
+        let provider = MockTTSProvider(sampleRate: 24000, frequency: 440)
+        let controller = StreamingTTSController(provider: provider)
+        
+        let startTime = ContinuousClock.now
+        try await controller.speak("Test")
+        let elapsed = ContinuousClock.now - startTime
+        
+        // The mock generates 0.1s of audio + 10ms simulated latency per chunk,
+        // so speak() should take a measurable amount of time before returning.
+        XCTAssertGreaterThan(elapsed, .zero, "speak() should wait for playback to complete")
+    }
+    
+    func testSpeakOnAlreadyStartedControllerThrows() async throws {
+        let provider = MockTTSProvider(sampleRate: 24000, frequency: 440)
+        let controller = StreamingTTSController(provider: provider)
+        
+        try await controller.start()
+        
+        do {
+            try await controller.speak("Should fail")
+            XCTFail("Expected alreadyStarted error")
+        } catch let error as StreamTTSError {
+            guard case .alreadyStarted = error else {
+                XCTFail("Expected .alreadyStarted, got \(error)")
+                return
+            }
+        }
+        
+        // Clean up the first start
+        controller.finish()
+        await controller.waitUntilFinished()
+    }
+    
+    func testSpeakOnCancelledControllerThrows() async throws {
+        let provider = MockTTSProvider(sampleRate: 24000, frequency: 440)
+        let controller = StreamingTTSController(provider: provider)
+        
+        controller.cancel()
+        
+        do {
+            try await controller.speak("Should fail")
+            XCTFail("Expected alreadyCancelled error")
+        } catch let error as StreamTTSError {
+            guard case .alreadyCancelled = error else {
+                XCTFail("Expected .alreadyCancelled, got \(error)")
+                return
+            }
+        }
+    }
+    
     func testYieldBeforeStartIsDropped() async throws {
         // Before start() is called, the text continuation is nil,
         // so yield calls are silently dropped. This is documented behavior.
