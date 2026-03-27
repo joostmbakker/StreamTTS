@@ -39,13 +39,26 @@ final class TTSViewModel {
 
     @ObservationIgnored
     @AppStorage("elevenLabsVoiceID") var elevenLabsVoiceID: String = "21m00Tcm4TlvDq8ikWAM"
+    
+    @ObservationIgnored
+    @AppStorage("elevenLabsModelID") var elevenLabsModelID: String = "eleven_flash_v2_5"
 
     // MARK: - Google Cloud settings (tokens are short-lived, not persisted)
 
     var googleAccessToken: String = ""
-    var googleLanguageCode: String = "en-US"
     var googleVoiceName: String = "en-US-Chirp3-HD-Achernar"
-    var googleProjectID: String = ""
+    
+    var googleLanguageCode: String {
+        // Extract language code from voice name (e.g. "en-US" from "en-US-Chirp3-HD-Achernar")
+        let components = googleVoiceName.split(separator: "-")
+        if components.count >= 2 {
+            return "\(components[0])-\(components[1])"
+        }
+        return "en-US"
+    }
+    
+    @ObservationIgnored
+    @AppStorage("googleProjectID") var googleProjectID: String = ""
 
     // MARK: - Playback state
 
@@ -69,7 +82,7 @@ final class TTSViewModel {
         case .elevenLabs:
             return !elevenLabsAPIKey.isEmpty && !elevenLabsVoiceID.isEmpty
         case .googleCloud:
-            return !googleAccessToken.isEmpty
+            return !googleAccessToken.isEmpty && !googleProjectID.isEmpty
         }
     }
 
@@ -136,11 +149,12 @@ final class TTSViewModel {
         guard !googleAccessToken.isEmpty else {
             throw ValidationError.missingCredentials("Google access token is required.")
         }
+        guard !googleProjectID.isEmpty else {
+            throw ValidationError.missingCredentials("Google Project ID is required.")
+        }
         var config = GoogleCloudTTSConfiguration()
         config.voice = .init(languageCode: googleLanguageCode, name: googleVoiceName)
-        if !googleProjectID.isEmpty {
-            config.quotaProjectID = googleProjectID
-        }
+        config.quotaProjectID = googleProjectID
         let auth = PastedTokenAuthProvider(token: googleAccessToken)
         return GoogleCloudTTSAdapter(configuration: config, authProvider: auth)
     }
@@ -151,10 +165,11 @@ final class TTSViewModel {
             guard !elevenLabsAPIKey.isEmpty else {
                 throw ValidationError.missingCredentials("ElevenLabs API key is required.")
             }
-            let config = ElevenLabsConfiguration(
+            var config = ElevenLabsConfiguration(
                 apiKey: elevenLabsAPIKey,
                 voiceId: elevenLabsVoiceID
             )
+            config.modelId = elevenLabsModelID
             return ElevenLabsTTSAdapter(configuration: config)
 
         case .googleCloud:
