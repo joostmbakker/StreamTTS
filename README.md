@@ -16,10 +16,9 @@ It decouples network-level TTS ingestion from Core Audio hardware rendering. Thi
 
 Add StreamTTS to your Swift project using the Swift Package Manager. In your `Package.swift` file, add:
 
-<!-- TODO: Replace with actual repo URL before publishing -->
 ```swift
 dependencies: [
-    .package(url: "https://github.com/your-repo/StreamTTS.git", from: "1.0.0")
+    .package(url: "https://github.com/joostmbakker/StreamTTS.git", from: "1.0.0")
 ]
 ```
 
@@ -31,6 +30,23 @@ You can selectively import what you need:
 ---
 
 ## Usage
+
+### Quick Start
+
+If you have the full text upfront, use the `speak` convenience method:
+
+```swift
+import StreamTTSCore
+import StreamTTSElevenLabs
+
+let config = ElevenLabsConfiguration(apiKey: "YOUR_API_KEY", voiceId: "21m00Tcm4TlvDq8ikWAM")
+let provider = ElevenLabsTTSAdapter(configuration: config)
+
+let controller = StreamingTTSController(provider: provider)
+try await controller.speak("Hello, world!")
+```
+
+For incremental streaming (e.g., yielding chunks from an LLM response as they arrive), use the `start/yield/finish` flow shown below.
 
 ### 1. ElevenLabs
 
